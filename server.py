@@ -558,6 +558,19 @@ async def health_check():
     return {"status": "healthy", "timestamp": utcnow().isoformat()}
 
 
+@app.get("/")
+async def root():
+    db_status = "connected"
+    try:
+        await db.command("ping")
+    except Exception as e:
+        db_status = f"disconnected: {str(e)}"
+    return {
+        "status": "success",
+        "message": "Backend is running successfully",
+        "database": db_status
+    }
+
 app.include_router(auth_router)
 app.include_router(api_router)
 
