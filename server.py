@@ -92,6 +92,7 @@ class SubscriptionSync(BaseModel):
     active: bool
     plan: Literal["free", "monthly", "annual"]
     product_identifier: Optional[str] = Field(default=None, max_length=255)
+    active_product_identifiers: list[str] = Field(default_factory=list, max_length=20)
     price_amount: Optional[float] = Field(default=None, ge=0)
     price_currency: Optional[str] = Field(default=None, min_length=3, max_length=12)
     price_display: Optional[str] = Field(default=None, max_length=64)
@@ -243,12 +244,13 @@ def subscription_plan(data: SubscriptionSync, pro: bool) -> str:
     """Resolve a plan from the purchased product, not only a client-side label."""
     if not pro:
         return "free"
-    product_id = (data.product_identifier or "").lower()
+    product_ids = [data.product_identifier, *data.active_product_identifiers]
+    normalized_product_ids = [product_id.lower() for product_id in product_ids if product_id]
     # The configured Apple annual product is `dishfinder_anually_premium`.
     # `anual` intentionally accepts that spelling and the standard `annual`.
-    if any(token in product_id for token in ("anual", "annual", "year")):
+    if any(any(token in product_id for token in ("anual", "annual", "year")) for product_id in normalized_product_ids):
         return "annual"
-    if "month" in product_id:
+    if any("month" in product_id for product_id in normalized_product_ids):
         return "monthly"
     return data.plan
 
@@ -417,8 +419,11 @@ async def add_favourite(favourite: FavoriteCreate, user: dict = Depends(require_
     item = {**favourite.model_dump(), "user_id": user["id"], "created_at": utcnow()}
     result = await favourites_collection.update_one({"user_id": user["id"], "place_id": favourite.place_id}, {"$setOnInsert": item}, upsert=True)
     if not result.upserted_id:
-        raise HTTPException(status_code=409, detail="Already in favourites")
-    return {"message": "Added to favourites", "favourite": serialize(item)}
+        # A duplicate save is harmless. Returning success prevents stale local
+        # favourites state from displaying a false error to the user.
+        existing = await favourites_collection.find_one({"user_id": user["id"], "place_id": favourite.place_id})
+        return {"message": "Already in favourites", "favourite": serialize(existing), "already_saved": True}
+    return {"message": "Added to favourites", "favourite": serialize(item), "already_saved": False}
 
 
 async def favourites_for(user: dict):
@@ -466,6 +471,7 @@ async def subscription_status(user: dict) -> dict:
                 active=True,
                 plan=plan if plan in ("monthly", "annual") else "monthly",
                 product_identifier=product_identifier,
+                active_product_identifiers=(record or {}).get("active_product_identifiers", []),
             ),
             pro=True,
         )
@@ -522,6 +528,7 @@ async def sync_subscription(data: SubscriptionSync, user: dict = Depends(require
         "subscription_type": plan,
         "pro_expires_at": expires_at if pro else None,
         "product_identifier": data.product_identifier,
+        "active_product_identifiers": data.active_product_identifiers,
         "price_amount": data.price_amount if pro else None,
         "price_currency": data.price_currency.upper() if pro and data.price_currency else None,
         "price_display": data.price_display if pro else None,
@@ -570,6 +577,7 @@ async def root():
         "message": "Backend is running successfully",
         "database": db_status
     }
+
 
 app.include_router(auth_router)
 app.include_router(api_router)
