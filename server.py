@@ -8,11 +8,15 @@ import uuid
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, UploadFile, File
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
+import gridfs
+from bson import ObjectId
+from bson.errors import InvalidId
 from passlib.context import CryptContext
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from pymongo import ReturnDocument
@@ -23,6 +27,7 @@ load_dotenv(ROOT_DIR / ".env")
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
+fs = AsyncIOMotorGridFSBucket(db)
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
@@ -122,6 +127,8 @@ def serialize(doc):
         return [serialize(item) for item in doc]
     if isinstance(doc, dict):
         return {key: (str(value) if key == "_id" else serialize(value)) for key, value in doc.items()}
+    if isinstance(doc, ObjectId):
+        return str(doc)
     if isinstance(doc, datetime):
         return doc.isoformat()
     return doc
@@ -366,6 +373,83 @@ async def get_me(user: dict = Depends(require_auth)):
 async def get_user(user_id: str, user: dict = Depends(require_auth)):
     assert_identity(user_id, user)
     return safe_user(user)
+
+
+@api_router.post("/users/profile-picture")
+async def upload_profile_picture(file: UploadFile = File(...), user: dict = Depends(require_auth)):
+    if file.content_type not in ["image/jpeg", "image/png", "image/webp"]:
+        raise HTTPException(status_code=400, detail="Invalid image type. Only JPEG, PNG, and WebP are supported.")
+    
+    file_bytes = await file.read()
+    if len(file_bytes) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image exceeds 5MB size limit.")
+        
+    grid_in = fs.open_upload_stream(
+        file.filename, metadata={"contentType": file.content_type}
+    )
+    await grid_in.write(file_bytes)
+    await grid_in.close()
+    
+    new_image_id = str(grid_in._id)
+    
+    # Check if there is an existing image to delete later
+    old_image_id = user.get("profileImageId")
+    
+    # Update the user
+    await users_collection.update_one(
+        {"id": user["id"]},
+        {"$set": {"profileImageId": new_image_id, "updated_at": utcnow()}}
+    )
+    
+    # Delete old image if it exists
+    if old_image_id:
+        try:
+            await fs.delete(ObjectId(old_image_id))
+        except gridfs.errors.NoFile:
+            pass
+            
+    return {"message": "Profile picture updated successfully", "profileImageId": new_image_id}
+
+
+@api_router.get("/users/profile-picture/{image_id}")
+async def get_profile_picture(image_id: str):
+    if not ObjectId.is_valid(image_id):
+        raise HTTPException(status_code=400, detail="Invalid image ID")
+        
+    try:
+        grid_out = await fs.open_download_stream(ObjectId(image_id))
+    except gridfs.errors.NoFile:
+        raise HTTPException(status_code=404, detail="Profile picture not found")
+        
+    async def read_stream():
+        while True:
+            chunk = await grid_out.readchunk()
+            if not chunk:
+                break
+            yield chunk
+            
+    content_type = grid_out.metadata.get("contentType", "image/jpeg") if grid_out.metadata else "image/jpeg"
+    return StreamingResponse(read_stream(), media_type=content_type)
+
+
+@api_router.delete("/users/profile-picture")
+async def delete_profile_picture(user: dict = Depends(require_auth)):
+    image_id = user.get("profileImageId")
+    if not image_id:
+        raise HTTPException(status_code=400, detail="No profile picture to delete")
+        
+    try:
+        await fs.delete(ObjectId(image_id))
+    except gridfs.errors.NoFile:
+        pass
+        
+    await users_collection.update_one(
+        {"id": user["id"]},
+        {"$unset": {"profileImageId": ""}, "$set": {"updated_at": utcnow()}}
+    )
+    
+    return {"message": "Profile picture deleted successfully"}
+
 
 
 @api_router.post("/search")
