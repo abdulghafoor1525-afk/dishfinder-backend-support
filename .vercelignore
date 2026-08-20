@@ -1,7 +1,0 @@
-venv/
-venvScriptsactivate/
-__pycache__/
-.env
-*.pyc
-migrate_device_id_to_account.py
-yarn.lock
