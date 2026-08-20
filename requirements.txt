@@ -8,4 +8,5 @@ pydantic==2.12.5
 pymongo==4.5.0
 python-dotenv==1.2.1
 python-jose==3.5.0
+python-multipart==0.0.9
 uvicorn==0.25.0
