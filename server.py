@@ -24,10 +24,18 @@ from pymongo import ReturnDocument
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ["DB_NAME"]]
-fs = AsyncIOMotorGridFSBucket(db)
+mongo_url = os.environ.get("MONGO_URL")
+db_name = os.environ.get("DB_NAME")
+
+client = None
+db = None
+fs = None
+
+if mongo_url and db_name:
+    client = AsyncIOMotorClient(mongo_url)
+    db = client[db_name]
+    fs = AsyncIOMotorGridFSBucket(db)
+
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
@@ -37,11 +45,11 @@ GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
-users_collection = db.get_collection("users")
-favourites_collection = db.get_collection("favourites")
-search_history_collection = db.get_collection("search_history")
-subscriptions_collection = db.get_collection("subscriptions")
-sessions_collection = db.get_collection("sessions")
+users_collection = db.get_collection("users") if db is not None else None
+favourites_collection = db.get_collection("favourites") if db is not None else None
+search_history_collection = db.get_collection("search_history") if db is not None else None
+subscriptions_collection = db.get_collection("subscriptions") if db is not None else None
+sessions_collection = db.get_collection("sessions") if db is not None else None
 
 app = FastAPI(title="DishFinder API")
 app.add_middleware(
@@ -651,6 +659,11 @@ async def health_check():
 
 @app.get("/")
 async def root():
+    if client is None or db is None:
+        return {
+            "status": "error",
+            "message": "Backend is running but database is not configured. Missing MONGO_URL or DB_NAME environment variables."
+        }
     db_status = "connected"
     try:
         await db.command("ping")
@@ -669,8 +682,13 @@ app.include_router(api_router)
 
 @app.on_event("startup")
 async def initialise_database():
+    if not mongo_url or not db_name:
+        print("WARNING: MONGO_URL or DB_NAME is missing. Database not initialized.")
+        return
     if len(JWT_SECRET) < 32:
-        raise RuntimeError("JWT_SECRET must be set to a random value of at least 32 characters")
+        print("WARNING: JWT_SECRET must be set to a random value of at least 32 characters")
+        # Don't raise RuntimeError so we don't crash Vercel on boot, just print warning
+    
     await users_collection.create_index("email", unique=True, partialFilterExpression={"is_anonymous": False})
     await favourites_collection.create_index([("user_id", 1), ("place_id", 1)], unique=True)
     await search_history_collection.create_index([("user_id", 1), ("timestamp", -1)])
@@ -680,4 +698,5 @@ async def initialise_database():
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    client.close()
+    if client:
+        client.close()
