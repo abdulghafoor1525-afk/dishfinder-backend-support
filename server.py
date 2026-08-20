@@ -582,10 +582,14 @@ async def subscription_status(user: dict) -> dict:
         price_amount = price_amount if price_amount is not None else record.get("price_amount")
         price_currency = price_currency or record.get("price_currency")
         price_display = price_display or record.get("price_display")
+    # will_renew only lives on the subscriptions record (not mirrored onto the
+    # user doc), so it's only known once we have a record to read it from.
+    will_renew = record.get("will_renew") if record else None
     return {
         "subscription_type": plan,
         "pro": pro,
         "pro_expires_at": serialize(user.get("pro_expires_at")) if pro else None,
+        "will_renew": will_renew if pro else None,
         "subscription_price_amount": price_amount if pro else None,
         "subscription_price_currency": price_currency if pro else None,
         "subscription_price_display": price_display if pro else None,
