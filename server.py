@@ -24,18 +24,10 @@ from pymongo import ReturnDocument
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-mongo_url = os.environ.get("MONGO_URL")
-db_name = os.environ.get("DB_NAME")
-
-client = None
-db = None
-fs = None
-
-if mongo_url and db_name:
-    client = AsyncIOMotorClient(mongo_url)
-    db = client[db_name]
-    fs = AsyncIOMotorGridFSBucket(db)
-
+mongo_url = os.environ["MONGO_URL"]
+client = AsyncIOMotorClient(mongo_url)
+db = client[os.environ["DB_NAME"]]
+fs = AsyncIOMotorGridFSBucket(db)
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
@@ -45,11 +37,11 @@ GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
-users_collection = db.get_collection("users") if db is not None else None
-favourites_collection = db.get_collection("favourites") if db is not None else None
-search_history_collection = db.get_collection("search_history") if db is not None else None
-subscriptions_collection = db.get_collection("subscriptions") if db is not None else None
-sessions_collection = db.get_collection("sessions") if db is not None else None
+users_collection = db.get_collection("users")
+favourites_collection = db.get_collection("favourites")
+search_history_collection = db.get_collection("search_history")
+subscriptions_collection = db.get_collection("subscriptions")
+sessions_collection = db.get_collection("sessions")
 
 app = FastAPI(title="DishFinder API")
 app.add_middleware(
@@ -227,21 +219,34 @@ async def merge_anonymous_user(anonymous: dict, account: dict) -> dict:
     if anonymous["id"] == account["id"] or not anonymous.get("is_anonymous"):
         return account
     anon_id, account_id = anonymous["id"], account["id"]
+    
+    # 1. Copy favourites
     async for favourite in favourites_collection.find({"user_id": anon_id}):
         await favourites_collection.update_one(
             {"user_id": account_id, "place_id": favourite["place_id"]},
             {"$setOnInsert": {**{key: value for key, value in favourite.items() if key != "_id"}, "user_id": account_id}},
             upsert=True,
         )
-    await favourites_collection.delete_many({"user_id": anon_id})
-    await search_history_collection.update_many({"user_id": anon_id}, {"$set": {"user_id": account_id}})
-    # Do not grant extra free searches by converting an anonymous session into an account.
+        
+    # 2. Copy search history (instead of moving it so anon user keeps it)
+    history_items = []
+    async for history in search_history_collection.find({"user_id": anon_id}):
+        copied = {**history}
+        del copied["_id"]
+        copied["user_id"] = account_id
+        history_items.append(copied)
+    if history_items:
+        await search_history_collection.insert_many(history_items)
+
+    # 3. Update search count on account
     await users_collection.update_one(
         {"id": account_id},
         {"$set": {"search_count": max(account.get("search_count", 0), anonymous.get("search_count", 0)), "updated_at": utcnow()}},
     )
-    await sessions_collection.update_many({"user_id": anon_id}, {"$set": {"revoked_at": utcnow()}})
-    await users_collection.delete_one({"id": anon_id, "is_anonymous": True})
+    
+    # We purposefully do NOT delete the anon_id user or revoke its sessions.
+    # The frontend persists this first anon session across logins and logouts
+    # so that the user retains their free search limit.
     return await users_collection.find_one({"id": account_id})
 
 
@@ -663,11 +668,6 @@ async def health_check():
 
 @app.get("/")
 async def root():
-    if client is None or db is None:
-        return {
-            "status": "error",
-            "message": "Backend is running but database is not configured. Missing MONGO_URL or DB_NAME environment variables."
-        }
     db_status = "connected"
     try:
         await db.command("ping")
@@ -686,13 +686,8 @@ app.include_router(api_router)
 
 @app.on_event("startup")
 async def initialise_database():
-    if not mongo_url or not db_name:
-        print("WARNING: MONGO_URL or DB_NAME is missing. Database not initialized.")
-        return
     if len(JWT_SECRET) < 32:
-        print("WARNING: JWT_SECRET must be set to a random value of at least 32 characters")
-        # Don't raise RuntimeError so we don't crash Vercel on boot, just print warning
-    
+        raise RuntimeError("JWT_SECRET must be set to a random value of at least 32 characters")
     await users_collection.create_index("email", unique=True, partialFilterExpression={"is_anonymous": False})
     await favourites_collection.create_index([("user_id", 1), ("place_id", 1)], unique=True)
     await search_history_collection.create_index([("user_id", 1), ("timestamp", -1)])
@@ -702,5 +697,4 @@ async def initialise_database():
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    if client:
-        client.close()
+    client.close()
