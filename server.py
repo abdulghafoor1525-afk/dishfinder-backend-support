@@ -106,6 +106,10 @@ class SubscriptionSync(BaseModel):
     store: Optional[str] = Field(default=None, max_length=64)
     ownership_type: Optional[str] = Field(default=None, max_length=64)
     period_type: Optional[str] = Field(default=None, max_length=64)
+    subscription_status: Optional[str] = Field(default=None, max_length=64)
+    pending_plan: Optional[Literal["monthly", "annual"]] = None
+    pending_product_identifier: Optional[str] = Field(default=None, max_length=255)
+    pending_activation_at: Optional[datetime] = None
 
 
 def utcnow() -> datetime:
@@ -264,10 +268,17 @@ def subscription_plan(data: SubscriptionSync, pro: bool) -> str:
     """Resolve a plan from the purchased product, not only a client-side label."""
     if not pro:
         return "free"
-    product_ids = [data.product_identifier, *data.active_product_identifiers]
-    normalized_product_ids = [product_id.lower() for product_id in product_ids if product_id]
+    primary_product_id = data.product_identifier.lower() if data.product_identifier else ""
     # The configured Apple annual product is `dishfinder_anually_premium`.
     # `anual` intentionally accepts that spelling and the standard `annual`.
+    if any(token in primary_product_id for token in ("anual", "annual", "year")):
+        return "annual"
+    if "month" in primary_product_id:
+        return "monthly"
+
+    # Fall back to the active-product list only for older clients that did not
+    # send the entitlement's current product identifier.
+    normalized_product_ids = [product_id.lower() for product_id in data.active_product_identifiers if product_id]
     if any(any(token in product_id for token in ("anual", "annual", "year")) for product_id in normalized_product_ids):
         return "annual"
     if any("month" in product_id for product_id in normalized_product_ids):
@@ -590,11 +601,17 @@ async def subscription_status(user: dict) -> dict:
     # will_renew only lives on the subscriptions record (not mirrored onto the
     # user doc), so it's only known once we have a record to read it from.
     will_renew = record.get("will_renew") if record else None
+    pending_plan = record.get("pending_plan") if record else None
+    pending_activation_at = record.get("pending_activation_at") if record else None
     return {
         "subscription_type": plan,
         "pro": pro,
         "pro_expires_at": serialize(user.get("pro_expires_at")) if pro else None,
         "will_renew": will_renew if pro else None,
+        "subscription_status": record.get("subscription_status") if record and pro else None,
+        "pending_plan": pending_plan if pro else None,
+        "pending_product_identifier": record.get("pending_product_identifier") if record and pro else None,
+        "pending_activation_at": serialize(pending_activation_at) if pro else None,
         "subscription_price_amount": price_amount if pro else None,
         "subscription_price_currency": price_currency if pro else None,
         "subscription_price_display": price_display if pro else None,
@@ -618,8 +635,12 @@ async def get_subscription_status(user_id: str, user: dict = Depends(require_aut
 async def sync_subscription(data: SubscriptionSync, user: dict = Depends(require_registered_account)):
     """Persist RevenueCat SDK state for the signed-in account without any RevenueCat server API/webhook."""
     expires_at = as_utc_naive(data.expires_at)
+    pending_activation_at = as_utc_naive(data.pending_activation_at)
     pro = data.active and (expires_at is None or expires_at > utcnow())
     plan = subscription_plan(data, pro)
+    pending_plan = data.pending_plan if pro and data.pending_plan != plan else None
+    if not pending_plan:
+        pending_activation_at = None
     synced_at = utcnow()
     record = {
         "user_id": user["id"],
@@ -637,6 +658,10 @@ async def sync_subscription(data: SubscriptionSync, user: dict = Depends(require
         "store": data.store,
         "ownership_type": data.ownership_type,
         "period_type": data.period_type,
+        "subscription_status": data.subscription_status,
+        "pending_plan": pending_plan,
+        "pending_product_identifier": data.pending_product_identifier if pending_plan else None,
+        "pending_activation_at": pending_activation_at,
         "last_synced_at": synced_at,
     }
     await users_collection.update_one(
