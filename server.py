@@ -97,6 +97,7 @@ class SubscriptionSync(BaseModel):
     active: bool
     plan: Literal["free", "monthly", "annual"]
     product_identifier: Optional[str] = Field(default=None, max_length=255)
+    product_plan_identifier: Optional[str] = Field(default=None, max_length=255)
     active_product_identifiers: list[str] = Field(default_factory=list, max_length=20)
     price_amount: Optional[float] = Field(default=None, ge=0)
     price_currency: Optional[str] = Field(default=None, min_length=3, max_length=12)
@@ -110,6 +111,7 @@ class SubscriptionSync(BaseModel):
     pending_plan: Optional[Literal["monthly", "annual"]] = None
     pending_product_identifier: Optional[str] = Field(default=None, max_length=255)
     pending_activation_at: Optional[datetime] = None
+    preserve_pending_change: bool = False
 
 
 def utcnow() -> datetime:
@@ -134,7 +136,11 @@ def serialize(doc):
     if isinstance(doc, ObjectId):
         return str(doc)
     if isinstance(doc, datetime):
-        return doc.isoformat()
+        # Mongo stores UTC timestamps without tzinfo. Include the UTC offset in
+        # API responses so mobile clients do not reinterpret renewal dates as
+        # device-local wall-clock values after an app restart.
+        utc_value = doc if doc.tzinfo else doc.replace(tzinfo=timezone.utc)
+        return utc_value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
     return doc
 
 
@@ -268,6 +274,12 @@ def subscription_plan(data: SubscriptionSync, pro: bool) -> str:
     """Resolve a plan from the purchased product, not only a client-side label."""
     if not pro:
         return "free"
+    primary_plan_id = data.product_plan_identifier.lower() if data.product_plan_identifier else ""
+    if any(token in primary_plan_id for token in ("anual", "annual", "year", "p1y")):
+        return "annual"
+    if any(token in primary_plan_id for token in ("month", "p1m")):
+        return "monthly"
+
     primary_product_id = data.product_identifier.lower() if data.product_identifier else ""
     # The configured Apple annual product is `dishfinder_anually_premium`.
     # `anual` intentionally accepts that spelling and the standard `annual`.
@@ -284,6 +296,44 @@ def subscription_plan(data: SubscriptionSync, pro: bool) -> str:
     if any("month" in product_id for product_id in normalized_product_ids):
         return "monthly"
     return data.plan
+
+
+def pending_subscription_change(
+    data: SubscriptionSync,
+    pro: bool,
+    current_plan: str,
+    pending_activation_at: Optional[datetime],
+    existing_record: Optional[dict],
+    now: Optional[datetime] = None,
+) -> tuple[Optional[str], Optional[str], Optional[datetime]]:
+    """Resolve an asserted or previously confirmed deferred Play plan change."""
+    pending_plan = data.pending_plan if pro and data.pending_plan != current_plan else None
+    pending_product_identifier = data.pending_product_identifier if pending_plan else None
+    comparison_time = now or utcnow()
+    if (
+        pro
+        and data.preserve_pending_change
+        and not pending_plan
+        and existing_record
+    ):
+        existing_pending_plan = existing_record.get("pending_plan")
+        existing_pending_activation = existing_record.get("pending_activation_at")
+        if (
+            existing_pending_plan in ("monthly", "annual")
+            and existing_pending_plan != current_plan
+            and (
+                existing_pending_activation is None
+                or existing_pending_activation > comparison_time
+            )
+        ):
+            return (
+                existing_pending_plan,
+                existing_record.get("pending_product_identifier"),
+                existing_pending_activation,
+            )
+    if not pending_plan:
+        pending_activation_at = None
+    return pending_plan, pending_product_identifier, pending_activation_at
 
 
 async def consume_search_quota(user_id: str) -> dict:
@@ -569,6 +619,7 @@ async def subscription_status(user: dict) -> dict:
     pro = is_pro(user)
     record = await subscriptions_collection.find_one({"user_id": user["id"]}) if pro else None
     product_identifier = user.get("subscription_product_identifier") or (record or {}).get("product_identifier")
+    product_plan_identifier = user.get("subscription_product_plan_identifier") or (record or {}).get("product_plan_identifier")
     plan = user.get("subscription_type", "free") if pro else "free"
     # Correct subscriptions written before annual-product detection handled the
     # configured `dishfinder_anually_premium` identifier.
@@ -579,6 +630,7 @@ async def subscription_status(user: dict) -> dict:
                 active=True,
                 plan=plan if plan in ("monthly", "annual") else "monthly",
                 product_identifier=product_identifier,
+                product_plan_identifier=product_plan_identifier,
                 active_product_identifiers=(record or {}).get("active_product_identifiers", []),
             ),
             pro=True,
@@ -638,9 +690,14 @@ async def sync_subscription(data: SubscriptionSync, user: dict = Depends(require
     pending_activation_at = as_utc_naive(data.pending_activation_at)
     pro = data.active and (expires_at is None or expires_at > utcnow())
     plan = subscription_plan(data, pro)
-    pending_plan = data.pending_plan if pro and data.pending_plan != plan else None
-    if not pending_plan:
-        pending_activation_at = None
+    existing_record = await subscriptions_collection.find_one({"user_id": user["id"]})
+    pending_plan, pending_product_identifier, pending_activation_at = pending_subscription_change(
+        data,
+        pro,
+        plan,
+        pending_activation_at,
+        existing_record,
+    )
     synced_at = utcnow()
     record = {
         "user_id": user["id"],
@@ -650,6 +707,7 @@ async def sync_subscription(data: SubscriptionSync, user: dict = Depends(require
         "subscription_type": plan,
         "pro_expires_at": expires_at if pro else None,
         "product_identifier": data.product_identifier,
+        "product_plan_identifier": data.product_plan_identifier,
         "active_product_identifiers": data.active_product_identifiers,
         "price_amount": data.price_amount if pro else None,
         "price_currency": data.price_currency.upper() if pro and data.price_currency else None,
@@ -660,7 +718,7 @@ async def sync_subscription(data: SubscriptionSync, user: dict = Depends(require
         "period_type": data.period_type,
         "subscription_status": data.subscription_status,
         "pending_plan": pending_plan,
-        "pending_product_identifier": data.pending_product_identifier if pending_plan else None,
+        "pending_product_identifier": pending_product_identifier,
         "pending_activation_at": pending_activation_at,
         "last_synced_at": synced_at,
     }
@@ -672,6 +730,7 @@ async def sync_subscription(data: SubscriptionSync, user: dict = Depends(require
             "subscription_type": plan,
             "pro_expires_at": record["pro_expires_at"],
             "subscription_product_identifier": data.product_identifier,
+            "subscription_product_plan_identifier": data.product_plan_identifier,
             "subscription_price_amount": record["price_amount"],
             "subscription_price_currency": record["price_currency"],
             "subscription_price_display": record["price_display"],
