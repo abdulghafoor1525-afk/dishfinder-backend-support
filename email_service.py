@@ -1,22 +1,22 @@
-"""SMTP email delivery for DishFinder account emails."""
+"""Transactional email delivery for DishFinder account emails."""
 
-from email.message import EmailMessage
+from hashlib import sha256
 from html import escape
 import os
-import smtplib
-import ssl
 from urllib.parse import quote
+
+import httpx
+
+
+RESEND_EMAILS_URL = "https://api.resend.com/emails"
 
 
 class EmailConfigurationError(RuntimeError):
-    """Raised when required SMTP configuration is missing or invalid."""
+    """Raised when required email configuration is missing or invalid."""
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+class EmailDeliveryError(RuntimeError):
+    """Raised when the transactional email provider rejects a request."""
 
 
 def _verification_url(verification_token: str) -> str:
@@ -29,40 +29,27 @@ def _verification_url(verification_token: str) -> str:
 
 
 def send_verification_email(email: str, verification_token: str) -> None:
-    """Send a mobile-friendly email without logging credentials or the token."""
-    host = os.environ.get("SMTP_HOST", "").strip()
-    user = os.environ.get("SMTP_USER", "").strip()
-    password = os.environ.get("SMTP_PASS", "")
+    """Send a mobile-friendly verification email through Resend's HTTPS API."""
+    api_key = os.environ.get("RESEND_API_KEY", "").strip()
     sender = os.environ.get("EMAIL_FROM", "").strip()
     app_name = os.environ.get("APP_NAME", "DishFinder").strip() or "DishFinder"
     expiry_minutes = os.environ.get("EMAIL_VERIFICATION_EXPIRE_MINUTES", "60").strip()
-    secure = _env_bool("SMTP_SECURE")
 
-    try:
-        port = int(os.environ.get("SMTP_PORT", "465" if secure else "587"))
-    except ValueError as exc:
-        raise EmailConfigurationError("SMTP_PORT must be a number") from exc
-
-    if not all((host, user, password, sender)):
+    if not api_key or not sender:
         raise EmailConfigurationError(
-            "SMTP_HOST, SMTP_USER, SMTP_PASS, and EMAIL_FROM must be configured"
+            "RESEND_API_KEY and EMAIL_FROM must be configured"
         )
 
     verification_url = _verification_url(verification_token)
     safe_app_name = escape(app_name)
     safe_url = escape(verification_url, quote=True)
 
-    message = EmailMessage()
-    message["Subject"] = f"Verify your {app_name} email"
-    message["From"] = sender
-    message["To"] = email
-    message.set_content(
+    text_content = (
         f"Welcome to {app_name}!\n\n"
         f"Verify your email address within {expiry_minutes} minutes:\n{verification_url}\n\n"
         "If you did not create this account, you can ignore this email."
     )
-    message.add_alternative(
-        f"""\
+    html_content = f"""\
 <!doctype html>
 <html lang="en">
   <body style="margin:0;background:#f3f4f6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#303743;">
@@ -85,20 +72,26 @@ def send_verification_email(email: str, verification_token: str) -> None:
     </table>
   </body>
 </html>
-""",
-        subtype="html",
-    )
+"""
 
-    context = ssl.create_default_context()
-    if secure:
-        with smtplib.SMTP_SSL(host, port, timeout=20, context=context) as smtp:
-            smtp.login(user, password)
-            smtp.send_message(message)
-    else:
-        with smtplib.SMTP(host, port, timeout=20) as smtp:
-            smtp.ehlo()
-            if _env_bool("SMTP_STARTTLS", True):
-                smtp.starttls(context=context)
-                smtp.ehlo()
-            smtp.login(user, password)
-            smtp.send_message(message)
+    try:
+        response = httpx.post(
+            RESEND_EMAILS_URL,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Idempotency-Key": f"email-verification-{sha256(verification_token.encode()).hexdigest()}",
+                "User-Agent": "dishfinder-api/1.0",
+            },
+            json={
+                "from": sender,
+                "to": [email],
+                "subject": f"Verify your {app_name} email",
+                "text": text_content,
+                "html": html_content,
+            },
+            timeout=20,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        # Do not expose provider responses: they may contain account or recipient details.
+        raise EmailDeliveryError("Resend could not deliver the verification email") from exc

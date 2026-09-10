@@ -7,7 +7,6 @@ from typing import Literal, Optional
 import asyncio
 import os
 import secrets
-import smtplib
 import uuid
 
 import httpx
@@ -27,9 +26,9 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 try:
-    from .email_service import EmailConfigurationError, send_verification_email
+    from .email_service import EmailConfigurationError, EmailDeliveryError, send_verification_email
 except ImportError:  # Supports `cd backend && uvicorn server:app`.
-    from email_service import EmailConfigurationError, send_verification_email
+    from email_service import EmailConfigurationError, EmailDeliveryError, send_verification_email
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -218,8 +217,8 @@ def new_email_verification(user_id: str) -> tuple[str, str, datetime]:
 async def deliver_verification_email(email: str, raw_token: str) -> None:
     try:
         await asyncio.to_thread(send_verification_email, email, raw_token)
-    except (EmailConfigurationError, smtplib.SMTPException, OSError):
-        # Details can contain SMTP host/account data, so return a stable message only.
+    except (EmailConfigurationError, EmailDeliveryError):
+        # Details can contain provider/account data, so return a stable message only.
         raise HTTPException(
             status_code=503,
             detail={
