@@ -1330,7 +1330,7 @@ async def terms_of_service():
         <header>
           <p class="brand">DishFinder</p>
           <h1>Terms of Service</h1>
-          <p class="updated">Last updated: <time datetime="2025-01">January 2025</time></p>
+          <p class="updated">Last updated: <time datetime="2025-01">September 2026</time></p>
         </header>
 
         <div class="terms">
