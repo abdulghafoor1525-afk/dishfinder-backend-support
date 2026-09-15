@@ -1170,6 +1170,240 @@ async def health_check():
     return {"status": "healthy", "timestamp": utcnow().isoformat()}
 
 
+@app.get("/terms-of-service", response_class=HTMLResponse, include_in_schema=False)
+@api_router.get(
+    "/terms-of-service",
+    response_class=HTMLResponse,
+    summary="View the DishFinder Terms of Service",
+)
+async def terms_of_service():
+    content = """<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="theme-color" content="#303743">
+    <meta name="description" content="Terms of Service for the DishFinder app.">
+    <title>Terms of Service | DishFinder</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --background: #303743;
+        --surface: #3d4451;
+        --surface-soft: #454d5b;
+        --accent: #d6c5ab;
+        --text: #f8fafc;
+        --muted: #d8dde5;
+        --border: rgba(214, 197, 171, 0.22);
+      }
+
+      * { box-sizing: border-box; }
+
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        background: var(--background);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 17px;
+        line-height: 1.7;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      main {
+        width: min(100% - 32px, 820px);
+        margin: 0 auto;
+        padding: 48px 0;
+      }
+
+      article {
+        overflow: hidden;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        box-shadow: 0 18px 48px rgba(13, 18, 27, 0.22);
+      }
+
+      header {
+        padding: 42px 48px 34px;
+        background: linear-gradient(145deg, var(--surface-soft), var(--surface));
+        border-bottom: 1px solid var(--border);
+      }
+
+      .brand {
+        margin: 0 0 10px;
+        color: var(--accent);
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        color: var(--accent);
+        font-size: clamp(2rem, 6vw, 3rem);
+        line-height: 1.15;
+        letter-spacing: -0.025em;
+      }
+
+      .updated {
+        margin: 12px 0 0;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      .terms { padding: 12px 48px 44px; }
+
+      section {
+        padding: 28px 0;
+        border-bottom: 1px solid var(--border);
+      }
+
+      section:last-child {
+        padding-bottom: 0;
+        border-bottom: 0;
+      }
+
+      h2 {
+        margin: 0 0 10px;
+        color: var(--accent);
+        font-size: 1.25rem;
+        line-height: 1.35;
+      }
+
+      p { margin: 0; }
+      p + p, p + ul { margin-top: 12px; }
+
+      ul {
+        margin-bottom: 0;
+        padding-left: 1.4rem;
+      }
+
+      li { padding-left: 0.25rem; }
+      li + li { margin-top: 8px; }
+
+      a {
+        color: var(--accent);
+        font-weight: 650;
+        text-underline-offset: 3px;
+      }
+
+      a:hover { text-decoration-thickness: 2px; }
+
+      a:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 4px;
+        border-radius: 2px;
+      }
+
+      @media (max-width: 600px) {
+        body { font-size: 16px; }
+        main { width: min(100% - 20px, 820px); padding: 18px 0; }
+        article { border-radius: 16px; }
+        header { padding: 30px 24px 26px; }
+        .terms { padding: 8px 24px 32px; }
+        section { padding: 24px 0; }
+      }
+
+      @media print {
+        :root {
+          color-scheme: light;
+          --background: #ffffff;
+          --surface: #ffffff;
+          --surface-soft: #ffffff;
+          --accent: #222222;
+          --text: #222222;
+          --muted: #555555;
+          --border: #dddddd;
+        }
+
+        main { width: 100%; padding: 0; }
+        article { border: 0; box-shadow: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <header>
+          <p class="brand">DishFinder</p>
+          <h1>Terms of Service</h1>
+          <p class="updated">Last updated: <time datetime="2025-01">January 2025</time></p>
+        </header>
+
+        <div class="terms">
+          <section>
+            <h2>1. Acceptance of Terms</h2>
+            <p>By accessing and using DishFinder, you accept and agree to be bound by the terms and provisions of this agreement.</p>
+          </section>
+
+          <section>
+            <h2>2. Use Licence</h2>
+            <p>Permission is granted to temporarily use DishFinder for personal, non-commercial use only. This is the grant of a licence, not a transfer of title.</p>
+          </section>
+
+          <section>
+            <h2>3. Subscription Terms</h2>
+            <p>DishFinder offers monthly and annual subscription plans:</p>
+            <ul>
+              <li>Monthly subscriptions are billed every month and automatically renew unless cancelled.</li>
+              <li>Annual subscriptions are billed every year and automatically renew unless cancelled.</li>
+              <li>Prices are provided by the App Store or Google Play in the currency supported for your account. If a price is shown in USD, your bank may charge you in its local currency.</li>
+              <li>The free allowance is <strong>3 searches</strong>, shared across guest sessions and all accounts used on that device.</li>
+              <li>All subscriptions can be cancelled at any time through your App Store or Google Play account settings.</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2>4. User Accounts</h2>
+            <p>You are responsible for maintaining the confidentiality of your account and for all activities that occur under your account.</p>
+          </section>
+
+          <section>
+            <h2>5. Service Availability</h2>
+            <p>We strive to provide uninterrupted service but cannot guarantee that DishFinder will always be available. We may suspend or terminate service at any time for maintenance or other reasons.</p>
+          </section>
+
+          <section>
+            <h2>6. Location Services</h2>
+            <p>DishFinder uses your device location to find nearby restaurants. You can disable location services at any time through your device settings, though this may limit app functionality.</p>
+          </section>
+
+          <section>
+            <h2>7. Third-Party Services</h2>
+            <p>DishFinder integrates with Google Maps and other third-party services. Your use of these services is subject to their respective terms and conditions.</p>
+          </section>
+
+          <section>
+            <h2>8. Cancellation and Refunds</h2>
+            <p>Monthly subscriptions can be cancelled at any time through your account settings or by contacting support. Cancellations take effect at the end of the current billing period. Refunds are handled on a case-by-case basis.</p>
+          </section>
+
+          <section>
+            <h2>9. Limitation of Liability</h2>
+            <p>DishFinder is provided “as is” without warranties of any kind. We are not liable for any damages arising from your use of the service.</p>
+          </section>
+
+          <section>
+            <h2>10. Changes to Terms</h2>
+            <p>We reserve the right to modify these terms at any time. Continued use of DishFinder after changes constitutes acceptance of the new terms.</p>
+          </section>
+
+          <section>
+            <h2>11. Contact Information</h2>
+            <p>For questions about these Terms of Service, please contact us at:</p>
+            <p><a href="mailto:support@dishfinder.online">support@dishfinder.online</a></p>
+          </section>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>"""
+    return HTMLResponse(content=content)
+
+
 @app.get("/")
 async def root():
     db_status = "connected"
