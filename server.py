@@ -5,6 +5,8 @@ from html import escape
 from pathlib import Path
 from typing import Literal, Optional
 import asyncio
+from contextlib import suppress
+import logging
 import os
 import secrets
 import uuid
@@ -21,7 +23,7 @@ import gridfs
 from bson import ObjectId
 from bson.errors import InvalidId
 from passlib.context import CryptContext
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -71,6 +73,8 @@ sessions_collection = db.get_collection("sessions")
 devices_collection = db.get_collection("devices")
 device_quotas_collection = db.get_collection("device_quotas")
 FREE_SEARCH_LIMIT = 3
+ACCOUNT_DELETION_SCAN_SECONDS = 60
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="DishFinder API")
 app.add_middleware(
@@ -108,6 +112,20 @@ class AuthLogin(AuthRegister):
 
 class TokenRefreshRequest(BaseModel):
     refresh_token: str
+
+
+class AccountDeletionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    password: str = Field(min_length=8, max_length=128)
+    grace_period_days: Literal[0, 15, 30]
+
+    @field_validator("grace_period_days", mode="before")
+    @classmethod
+    def validate_grace_period(cls, value):
+        if type(value) is not int:
+            raise ValueError("grace_period_days must be an integer: 0, 15, or 30")
+        return value
 
 
 class EmailVerificationRequest(BaseModel):
@@ -195,6 +213,10 @@ def safe_user(user: dict) -> dict:
         "email_verification_expires",
         "email_verification_sent_at",
         "email_verification_request_id",
+        "deletion_status",
+        "deletion_requested_at",
+        "delete_after",
+        "deletion_grace_period_days",
     ):
         result.pop(private_field, None)
     # Accounts created before email verification was introduced remain valid.
@@ -204,6 +226,88 @@ def safe_user(user: dict) -> dict:
 
 def token_hash(token: str) -> str:
     return sha256(token.encode("utf-8")).hexdigest()
+
+
+def account_deletion_blocks_access(user: dict) -> bool:
+    return user.get("deletion_status") in ("pending", "deleting")
+
+
+async def purge_account(user: dict) -> None:
+    """Idempotent cleanup; keep the deleting account until every step succeeds."""
+    user_id = user["id"]
+    await sessions_collection.delete_many({"user_id": user_id})
+    await favourites_collection.delete_many({"user_id": user_id})
+    await search_history_collection.delete_many({"user_id": user_id})
+    await subscriptions_collection.delete_many({"user_id": user_id})
+    image_id = user.get("profileImageId")
+    if image_id and ObjectId.is_valid(image_id):
+        try:
+            await fs.delete(ObjectId(image_id))
+        except gridfs.errors.NoFile:
+            pass
+    # Installation credentials and quotas are shared with guest identities and
+    # other accounts. Deleting them would reset the device's free-search limit.
+    await users_collection.delete_one({"id": user_id, "deletion_status": "deleting"})
+
+
+async def process_due_account_deletions() -> None:
+    """Claim due accounts atomically against login cancellation; retry failures."""
+    now = utcnow()
+    eligible = {
+        "$or": [
+            {"deletion_status": "pending", "delete_after": {"$lte": now}},
+            {"deletion_status": "deleting"},
+        ]
+    }
+    async for candidate in users_collection.find(eligible):
+        try:
+            user = await users_collection.find_one_and_update(
+                {"id": candidate["id"], **eligible},
+                {"$set": {"deletion_status": "deleting", "updated_at": utcnow()}},
+                return_document=ReturnDocument.AFTER,
+            )
+            if user:
+                await purge_account(user)
+        except Exception:
+            # Avoid logging account identifiers or provider errors containing PII.
+            logger.error("Account deletion cleanup failed; will retry on the next scan")
+
+
+async def account_deletion_worker() -> None:
+    while True:
+        try:
+            await process_due_account_deletions()
+        except Exception:
+            logger.error("Account deletion scan failed; will retry on the next scan")
+        await asyncio.sleep(ACCOUNT_DELETION_SCAN_SECONDS)
+
+
+async def restore_account_for_login(account: dict) -> tuple[dict, bool]:
+    """Only a password-authenticated login before the deadline may restore data."""
+    now = utcnow()
+    restored = await users_collection.find_one_and_update(
+        {
+            "id": account["id"],
+            "deletion_status": "pending",
+            "delete_after": {"$gt": now},
+        },
+        {
+            "$unset": {
+                "deletion_status": "",
+                "deletion_requested_at": "",
+                "delete_after": "",
+                "deletion_grace_period_days": "",
+            },
+            "$set": {"updated_at": now},
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    if restored:
+        return restored, True
+    current = await users_collection.find_one({"id": account["id"]})
+    if not current or account_deletion_blocks_access(current):
+        raise HTTPException(status_code=401, detail="Account deletion is final; create a new account")
+    return current, False
 
 
 def new_email_verification(user_id: str) -> tuple[str, str, datetime]:
@@ -401,6 +505,8 @@ async def decode_credentials(credentials: Optional[HTTPAuthorizationCredentials]
     user = await users_collection.find_one({"id": payload["sub"]})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if account_deletion_blocks_access(user):
+        raise HTTPException(status_code=401, detail="Account deletion requested; sign in again before the deadline to cancel")
     if device:
         session = await bind_session_device(session, device)
     if session.get("quota_id"):
@@ -429,7 +535,7 @@ async def require_session_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     x_device_token: Optional[str] = Header(default=None),
 ) -> dict:
-    """Allow a pending account to inspect only its own verification state."""
+    """Allow an unverified account to inspect its state or request deletion."""
     device = await require_device(x_device_token) if x_device_token else None
     user, _ = await decode_credentials(credentials, device)
     return user
@@ -613,6 +719,7 @@ async def auth_login(data: AuthLogin, credentials: Optional[HTTPAuthorizationCre
     account = await users_collection.find_one({"email": str(data.email).strip().lower(), "is_anonymous": False})
     if not account or not account.get("password_hash") or not pwd_context.verify(data.password, account["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    account, deletion_cancelled = await restore_account_for_login(account)
     if credentials:
         try:
             await decode_credentials(credentials, device)  # Migrate usage, never copy personal data.
@@ -620,6 +727,8 @@ async def auth_login(data: AuthLogin, credentials: Optional[HTTPAuthorizationCre
             pass
     if account.get("is_email_verified") is False:
         session = await issue_session(account, device)
+        if deletion_cancelled:
+            session["account_deletion_cancelled"] = True
         return JSONResponse(
             status_code=403,
             content={
@@ -630,7 +739,10 @@ async def auth_login(data: AuthLogin, credentials: Optional[HTTPAuthorizationCre
                 "resend_cooldown_seconds": EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS,
             },
         )
-    return await issue_session(account, device)
+    session = await issue_session(account, device)
+    if deletion_cancelled:
+        session["account_deletion_cancelled"] = True
+    return session
 
 
 @auth_router.get("/verify-email", response_class=HTMLResponse)
@@ -834,6 +946,8 @@ async def auth_refresh(data: TokenRefreshRequest, device: dict = Depends(require
     user = await users_collection.find_one({"id": payload["sub"]})
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    if account_deletion_blocks_access(user):
+        raise HTTPException(status_code=401, detail="Account deletion requested; sign in again before the deadline to cancel")
     # Compare-and-swap makes refresh rotation single-use even if two requests race.
     next_refresh_token = create_refresh_token(user, payload["sid"])
     updated = await sessions_collection.update_one(
@@ -856,6 +970,50 @@ async def auth_logout(context: tuple[dict, dict] = Depends(auth_context)):
 @auth_router.get("/me")
 async def auth_me(user: dict = Depends(require_session_user)):
     return safe_user(user)
+
+
+@auth_router.post("/delete-account")
+async def delete_account(data: AccountDeletionRequest, user: dict = Depends(require_session_user)):
+    """Delete this account immediately or retain it for a 15/30-day login window."""
+    if user.get("is_anonymous"):
+        raise HTTPException(status_code=403, detail="Sign in to a DishFinder account before deleting an account")
+    if not user.get("password_hash") or not pwd_context.verify(data.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    now = utcnow()
+    delete_after = now + timedelta(days=data.grace_period_days)
+    account = await users_collection.find_one_and_update(
+        {"id": user["id"], "deletion_status": {"$nin": ["pending", "deleting"]}},
+        {"$set": {
+            "deletion_status": "pending" if data.grace_period_days else "deleting",
+            "deletion_requested_at": now,
+            "delete_after": delete_after,
+            "deletion_grace_period_days": data.grace_period_days,
+            "updated_at": now,
+        }},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not account:
+        raise HTTPException(status_code=409, detail="Account deletion already requested or account no longer exists")
+    try:
+        await sessions_collection.update_many({"user_id": user["id"]}, {"$set": {"revoked_at": now}})
+        if not data.grace_period_days:
+            await purge_account(account)
+    except Exception:
+        logger.error("Account deletion request saved but cleanup failed; background cleanup will retry")
+        raise HTTPException(status_code=503, detail={
+            "code": "ACCOUNT_DELETION_REQUEST_SAVED",
+            "message": "Your deletion request is saved and access is blocked. Cleanup will retry automatically.",
+        })
+    return {
+        "success": True,
+        "message": "Account deletion scheduled. Sign in before the deadline to cancel." if data.grace_period_days else "Account deleted successfully.",
+        "status": "scheduled" if data.grace_period_days else "deleted",
+        "grace_period_days": data.grace_period_days,
+        "deletion_requested_at": serialize(now),
+        "delete_after": serialize(delete_after),
+        "can_cancel": bool(data.grace_period_days),
+    }
 
 
 @api_router.get("/users/me")
@@ -1228,8 +1386,16 @@ async def initialise_database():
     await search_history_collection.create_index([("user_id", 1), ("timestamp", -1)])
     await sessions_collection.create_index("expires_at", expireAfterSeconds=0)
     await subscriptions_collection.create_index("user_id", unique=True, partialFilterExpression={"user_id": {"$exists": True}})
+    # No TTL on users: cascading cleanup must finish before removing the account.
+    await users_collection.create_index([("deletion_status", 1), ("delete_after", 1)])
+    app.state.account_deletion_task = asyncio.create_task(account_deletion_worker())
 
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    task = getattr(app.state, "account_deletion_task", None)
+    if task:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
     client.close()
