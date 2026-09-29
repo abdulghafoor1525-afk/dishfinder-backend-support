@@ -118,13 +118,13 @@ class AccountDeletionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     password: str = Field(min_length=8, max_length=128)
-    grace_period_days: Literal[0, 15, 30]
+    grace_period_days: Literal[0, 15] = 15
 
     @field_validator("grace_period_days", mode="before")
     @classmethod
     def validate_grace_period(cls, value):
         if type(value) is not int:
-            raise ValueError("grace_period_days must be an integer: 0, 15, or 30")
+            raise ValueError("grace_period_days must be an integer: 0 or 15")
         return value
 
 
@@ -974,7 +974,7 @@ async def auth_me(user: dict = Depends(require_session_user)):
 
 @auth_router.post("/delete-account")
 async def delete_account(data: AccountDeletionRequest, user: dict = Depends(require_session_user)):
-    """Delete this account immediately or retain it for a 15/30-day login window."""
+    """Delete this account immediately or retain it for a 15-day login window."""
     if user.get("is_anonymous"):
         raise HTTPException(status_code=403, detail="Sign in to a DishFinder account before deleting an account")
     if not user.get("password_hash") or not pwd_context.verify(data.password, user["password_hash"]):

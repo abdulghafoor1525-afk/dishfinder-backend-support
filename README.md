@@ -3,7 +3,7 @@
 ## Account deletion API
 
 `POST /api/auth/delete-account` deletes the authenticated registered account or
-starts an opt-in grace period. This does not delete accounts merely because they
+starts an opt-in 15-day grace period. This does not delete accounts merely because they
 have been inactive. Both verified and unverified registered accounts can use it.
 
 Headers:
@@ -15,7 +15,7 @@ Content-Type: application/json
 
 `X-Device-Token` may also be supplied, as on other authenticated endpoints.
 
-Request body (both fields required):
+Request body (`password` required; `grace_period_days` defaults to `15`):
 
 ```json
 {
@@ -28,7 +28,8 @@ Request body (both fields required):
 | --- | --- |
 | `0` | Permanently delete now; cannot be cancelled. |
 | `15` | Retain data for 15 days; signing in before the deadline cancels deletion. |
-| `30` | Retain data for 30 days; signing in before the deadline cancels deletion. |
+
+The supported values are `0` and `15`; a 30-day grace period is not offered.
 
 Example `200 OK` response for a 15-day request:
 
@@ -109,6 +110,14 @@ device token, or subscription:
 The existing `/terms-of-service` and `/api/terms-of-service` URLs continue to serve
 the same updated terms. Content and shared styling live in `legal_pages.py`.
 No additional dependencies or environment variables are required.
+
+Both policies were revised on September 29, 2026 to describe the standard
+15-day grace period, password confirmation, sign-out on every device, login
+cancellation before the deadline, irreversible deletion after the deadline,
+the immediate-deletion option, deleted account data, retained device/guest data,
+and separate store subscription cancellation. The mobile app must connect its
+account-deletion controls to the API and display the returned deadline.
+Reference: [Apple's account-deletion guidance](https://developer.apple.com/support/offering-account-deletion-in-your-app/).
 
 After deploying this backend, prepend its public HTTPS origin to either pair of
 paths. Open both resulting URLs without signing in to verify the deployed pages.

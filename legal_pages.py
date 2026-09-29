@@ -165,7 +165,7 @@ def render_legal_page(title: str, sections: str) -> str:
         <header>
           <p class="brand">DishFinder</p>
           <h1>{safe_title}</h1>
-          <p class="updated">Last updated: <time datetime="2026-09-23">September 23, 2026</time></p>
+          <p class="updated">Last updated: <time datetime="2026-09-29">September 29, 2026</time></p>
           <nav aria-label="Legal policies">
             <a href="./terms-of-use">Terms of Use (EULA)</a>
             <a href="./privacy-policy">Privacy Policy</a>
@@ -210,11 +210,19 @@ TERMS_OF_USE_HTML = render_legal_page("Terms of Use (EULA)", """
             <p>Our <a href="./privacy-policy">Privacy Policy</a> explains how DishFinder handles account, location, and subscription information. DishFinder uses services including Google Maps for restaurant results and RevenueCat for subscription management. Store purchases are also subject to the relevant store's terms.</p>
           </section>
           <section>
-            <h2>7. Availability and your rights</h2>
+            <h2>7. Account deletion</h2>
+            <p>You can request deletion of your registered DishFinder account using the account-deletion option and confirm the request with your current password. The standard deletion request has a <strong>15-day grace period</strong> starting when we accept your request. We sign you out on all devices and retain your account data during this period so you can change your mind.</p>
+            <p>To cancel the request, sign in again with your email address and password before the deletion deadline shown when you make the request. This restores your account and preserves your data; any email-verification requirements still apply. At or after the deadline, the request cannot be cancelled and the account cannot be restored. Signing out, uninstalling the app, or simply being inactive does not start an account-deletion request.</p>
+            <p>If you do not sign in before the deadline, we automatically process permanent deletion of your account, favourites, search history, profile picture, sign-in sessions, and subscription records held in DishFinder's account database. Temporary service outages may delay completion, but do not extend the recovery period. You may also choose immediate deletion, which has no grace period and cannot be cancelled.</p>
+            <p>Device installation credentials, guest data, and device search-allowance records remain separate from your registered account. Deleting an account does not reset the device's free search allowance. Our <a href="./privacy-policy">Privacy Policy</a> explains retained information and how to make additional privacy requests.</p>
+            <p>Account deletion does not cancel an App Store or Google Play subscription, stop store billing, or automatically provide a refund. Cancel your subscription separately through the store to stop future renewals. Account access, including paid access through that account, is unavailable while deletion is pending and after permanent deletion.</p>
+          </section>
+          <section>
+            <h2>8. Availability and your rights</h2>
             <p>Availability and restaurant information are not guaranteed. Maintenance, network problems, and third-party outages can interrupt service. To the extent permitted by law, the service is provided as available without additional warranties. Nothing in these terms excludes liability or consumer rights that cannot legally be excluded.</p>
           </section>
           <section>
-            <h2>8. Changes and contact</h2>
+            <h2>9. Changes and contact</h2>
             <p>Updates to these terms will appear on this page with a revised date. Changes remain subject to applicable law and the terms of your store purchase.</p>
             <p>For questions about DishFinder or these terms, contact <a href="mailto:support@dishfinder.online">support@dishfinder.online</a>.</p>
           </section>
@@ -229,7 +237,7 @@ PRIVACY_POLICY_HTML = render_legal_page("Privacy Policy", """
           <section>
             <h2>2. Information we collect</h2>
             <ul>
-              <li><strong>Account information:</strong> your email address, account identifier, verification status, a hashed password, and a profile picture if you upload one.</li>
+              <li><strong>Account information:</strong> your email address, account identifier, verification status, a hashed password, and a profile picture if you upload one. If you request account deletion, we also record the request time, deletion deadline, and processing status.</li>
               <li><strong>Guest and device information:</strong> installation identifiers, device credentials, session records, and search counts used to maintain guest access, secure sign-in, and apply the free search allowance. On Android, a device identifier is used to derive a hashed identifier for this allowance.</li>
               <li><strong>Search and location information:</strong> the dish you search for, the latitude and longitude sent with your search, search radius, time, and result count. Search coordinates can reveal your precise location. These details are stored in your search history.</li>
               <li><strong>Saved content:</strong> favourite restaurants and their names, addresses, coordinates, and ratings.</li>
@@ -239,7 +247,7 @@ PRIVACY_POLICY_HTML = render_legal_page("Privacy Policy", """
           </section>
           <section>
             <h2>3. How information is used</h2>
-            <p>We use this information to create and secure accounts, send verification emails, find nearby restaurants, save favourites and search history, maintain subscription access, enforce search allowances, prevent misuse, and respond to support requests.</p>
+            <p>We use this information to create and secure accounts, send verification emails, find nearby restaurants, save favourites and search history, maintain subscription access, enforce search allowances, prevent misuse, process account-deletion requests, and respond to support requests.</p>
             <p>Location sent with a search is used to find nearby results and calculate distances. You can control the app's location permission in your device settings; restricting access may limit location-based features.</p>
           </section>
           <section>
@@ -257,13 +265,17 @@ PRIVACY_POLICY_HTML = render_legal_page("Privacy Policy", """
           <section>
             <h2>5. Retention and security</h2>
             <p>Account data, saved content, search history, device usage records, and subscription records are stored to support the functions described above. Search history is not automatically erased when it falls outside the most recent entries displayed in the app. Signing out, uninstalling the app, or cancelling a subscription does not automatically erase backend records.</p>
-            <p>You can contact us to request deletion. Some records may need to be retained for legal obligations, security, fraud prevention, or resolving disputes. Retention depends on the type of record and its purpose; we do not promise a fixed deletion period for all records.</p>
+            <p>When you confirm a standard account-deletion request with your current password, we sign you out on all devices and retain your registered account and its data for a <strong>15-day grace period</strong> from the time the request is accepted. Sign in again with your email address and password before the displayed deletion deadline to cancel the request and preserve your data. Simply refreshing a session does not cancel deletion. At or after the deadline, the account cannot be restored.</p>
+            <p>If you do not sign in before the deadline, we automatically process permanent deletion of your account information, deletion-request details, favourites, search history, profile picture, sign-in sessions, and subscription records held in DishFinder's account database. If you choose immediate deletion, there is no grace period and the request cannot be cancelled. Temporary service outages may delay completion; account access remains blocked and the recovery deadline does not change.</p>
+            <p>Account deletion does not remove device installation credentials, device search counts, or separately held guest data. These support guest access, security, and the free search allowance shared by accounts on the same installation. Deleting a registered account does not reset that allowance. Contact us about requests concerning this information.</p>
+            <p>The automated account-deletion process does not erase support correspondence or records held separately by service providers, such as store purchase records. Providers handle their records under their own policies. Separate records may need to be retained where required by law or for security, fraud prevention, or resolving disputes; their retention depends on their purpose and applicable obligations. Contact us for information or additional deletion requests concerning these records.</p>
             <p>Passwords are stored as hashes, and account access uses authentication controls. No storage or transmission method can guarantee complete security.</p>
           </section>
           <section>
             <h2>6. Your choices and requests</h2>
             <p>You can manage location permissions through your device, remove favourites or your profile picture using the app's available controls, and manage subscriptions through the store where you purchased them.</p>
-            <p>To request access to, correction of, or deletion of your personal information, email <a href="mailto:support@dishfinder.online">support@dishfinder.online</a>. We may need to verify your identity before fulfilling a request. Depending on where you live, you may have additional rights to object to processing, restrict it, or complain to a data protection authority.</p>
+            <p>Use the account-deletion option in DishFinder to request deletion of your registered account and confirm with your current password. Standard requests use the 15-day grace period described above; immediate deletion is also available. During the grace period, account access is blocked until you sign in to cancel the request.</p>
+            <p>For access to, correction of, or additional deletion of your personal information, or if you cannot access your account, email <a href="mailto:support@dishfinder.online">support@dishfinder.online</a>. We may need to verify your identity before fulfilling a request. Depending on where you live, you may have additional rights to object to processing, restrict it, or complain to a data protection authority.</p>
             <p>A data deletion request does not cancel your App Store or Google Play subscription. Cancel it separately in the store to stop future billing.</p>
           </section>
           <section>

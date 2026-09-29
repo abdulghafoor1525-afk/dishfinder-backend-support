@@ -125,32 +125,29 @@ class AccountDeletionTests(unittest.IsolatedAsyncioTestCase):
         self.assert_personal_data_removed()
         self.assertEqual((await self.http.get("/api/auth/me", headers=self.headers)).status_code, 401)
 
-    async def test_both_grace_periods_keep_data_and_revoke_every_session(self):
-        for days in (15, 30):
-            with self.subTest(days=days):
-                response = await self.request_deletion(days)
-                self.assertEqual(response.status_code, 200, response.text)
-                self.assertEqual(response.json()["status"], "scheduled")
-                self.assertTrue(response.json()["can_cancel"])
-                account = self.database.users.find_one({"id": "user-1"})
-                self.assertEqual(account["delete_after"], self.now + timedelta(days=days))
-                self.assertEqual(self.database.favourites.count_documents({"user_id": "user-1"}), 1)
-                self.assertEqual(self.database.sessions.count_documents({"user_id": "user-1", "revoked_at": None}), 0)
-                for tokens in (self.tokens, self.second_tokens):
-                    result = await self.http.get("/api/auth/me", headers={"Authorization": f"Bearer {tokens['access_token']}"})
-                    self.assertEqual(result.status_code, 401)
-                refresh = await self.http.post("/api/auth/refresh", headers={"X-Device-Token": self.device_token},
-                                               json={"refresh_token": self.tokens["refresh_token"]})
-                self.assertEqual(refresh.status_code, 401)
-                await server.process_due_account_deletions()
-                self.assertIsNotNone(self.database.users.find_one({"id": "user-1"}))
-                result = await self.login()
-                self.assertEqual(result.status_code, 200, result.text)
-                self.assertTrue(result.json()["account_deletion_cancelled"])
-                self.headers = {"Authorization": f"Bearer {result.json()['access_token']}"}
+    async def test_grace_period_keeps_data_and_revokes_every_session(self):
+        response = await self.request_deletion(15)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "scheduled")
+        self.assertTrue(response.json()["can_cancel"])
+        account = self.database.users.find_one({"id": "user-1"})
+        self.assertEqual(account["delete_after"], self.now + timedelta(days=15))
+        self.assertEqual(self.database.favourites.count_documents({"user_id": "user-1"}), 1)
+        self.assertEqual(self.database.sessions.count_documents({"user_id": "user-1", "revoked_at": None}), 0)
+        for tokens in (self.tokens, self.second_tokens):
+            result = await self.http.get("/api/auth/me", headers={"Authorization": f"Bearer {tokens['access_token']}"})
+            self.assertEqual(result.status_code, 401)
+        refresh = await self.http.post("/api/auth/refresh", headers={"X-Device-Token": self.device_token},
+                                       json={"refresh_token": self.tokens["refresh_token"]})
+        self.assertEqual(refresh.status_code, 401)
+        await server.process_due_account_deletions()
+        self.assertIsNotNone(self.database.users.find_one({"id": "user-1"}))
+        result = await self.login()
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertTrue(result.json()["account_deletion_cancelled"])
 
     async def test_invalid_payload_password_and_missing_auth_do_not_delete(self):
-        for days in (1, 14, 31, -1, "15", False, 15.0):
+        for days in (1, 14, 30, 31, -1, "15", False, 15.0):
             self.assertEqual((await self.request_deletion(days)).status_code, 422)
         self.assertEqual((await self.request_deletion(0, user_id="user-2")).status_code, 422)
         self.assertEqual((await self.request_deletion(0, password="wrong-password")).status_code, 401)
@@ -158,6 +155,13 @@ class AccountDeletionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 401)
         self.assertIsNotNone(self.database.users.find_one({"id": "user-1"}))
         self.file_store.delete.assert_not_awaited()
+
+    async def test_omitting_grace_period_defaults_to_fifteen_days(self):
+        response = await self.http.post("/api/auth/delete-account", headers=self.headers,
+                                        json={"password": self.password})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["grace_period_days"], 15)
+        self.assertEqual(response.json()["delete_after"], "2026-10-14T12:00:00Z")
 
     async def test_guest_cannot_delete_and_unverified_account_can_delete(self):
         guest = self.database.users.find_one({"id": "guest-1"})
