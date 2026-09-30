@@ -65,7 +65,7 @@ def send_verification_email(email: str, verification_token: str) -> None:
               <a href="{safe_url}" style="display:inline-block;background:#D6C5AB;color:#303743;text-decoration:none;font-size:16px;font-weight:700;padding:14px 24px;border-radius:10px;">Verify Email</a>
             </p>
             <p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#6b7280;">This verification link expires in {escape(expiry_minutes)} minutes. If you did not create this account, no action is needed.</p>
-            <p style="margin:0;font-size:13px;line-height:1.6;color:#6b7280;word-break:break-all;">If the button does not work, open this link:<br><a href="{safe_url}" style="color:#5f503d;">{safe_url}</a></p>
+            <p style="margin:0;font-size:13px;line-height:1.6;color:#6b7280;word-break:break-all;">If the button does not work, open this link:<br><a href="{safe_url}" style="color:#5f503d;">Verification Link</a></p>
           </td></tr>
         </table>
       </td></tr>
