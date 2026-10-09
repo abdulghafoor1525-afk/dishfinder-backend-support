@@ -1362,7 +1362,8 @@ async def root():
     return {
         "status": "success",
         "message": "Backend is running successfully",
-        "database": db_status
+        "database": db_status,
+        "database_name": db.name
     }
 
 
