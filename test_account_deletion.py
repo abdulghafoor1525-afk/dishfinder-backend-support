@@ -61,7 +61,8 @@ class AccountDeletionTests(unittest.IsolatedAsyncioTestCase):
             patcher = patch.object(server, f"{name}_collection", replacement)
             patcher.start()
             self.addCleanup(patcher.stop)
-        self.now = datetime(2026, 9, 29, 12, 0, 0)
+        # JWT validation uses wall time; a fixed historical date expires tokens.
+        self.now = datetime.utcnow().replace(microsecond=0)
         clock = patch.object(server, "utcnow", return_value=self.now)
         clock.start()
         self.addCleanup(clock.stop)
@@ -119,8 +120,8 @@ class AccountDeletionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json(), {
             "success": True, "message": "Account deleted successfully.", "status": "deleted",
-            "grace_period_days": 0, "deletion_requested_at": "2026-09-29T12:00:00Z",
-            "delete_after": "2026-09-29T12:00:00Z", "can_cancel": False,
+            "grace_period_days": 0, "deletion_requested_at": self.now.isoformat() + "Z",
+            "delete_after": self.now.isoformat() + "Z", "can_cancel": False,
         })
         self.assert_personal_data_removed()
         self.assertEqual((await self.http.get("/api/auth/me", headers=self.headers)).status_code, 401)
@@ -161,7 +162,7 @@ class AccountDeletionTests(unittest.IsolatedAsyncioTestCase):
                                         json={"password": self.password})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["grace_period_days"], 15)
-        self.assertEqual(response.json()["delete_after"], "2026-10-14T12:00:00Z")
+        self.assertEqual(response.json()["delete_after"], (self.now + timedelta(days=15)).isoformat() + "Z")
 
     async def test_guest_cannot_delete_and_unverified_account_can_delete(self):
         guest = self.database.users.find_one({"id": "guest-1"})
@@ -244,6 +245,7 @@ class AccountDeletionTests(unittest.IsolatedAsyncioTestCase):
         # mongomock does not fully implement Mongo's partial unique indexes.
         with patch.object(server, "process_due_account_deletions", side_effect=scan), \
                 patch.object(server, "client") as client, \
+                patch.object(server, "_connect_database"), \
                 patch.object(server.users_collection, "create_index", new=AsyncMock()) as create_index:
             await server.initialise_database()
             create_index.assert_any_await([("deletion_status", 1), ("delete_after", 1)])

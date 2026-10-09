@@ -1,5 +1,35 @@
 # DishFinder backend
 
+## Vercel deployment
+
+Use the FastAPI framework preset and the repository root containing `server.py`
+and `requirements.txt`. Vercel detects the exported `app`; no legacy
+`vercel.json` build or routing configuration is required. Configure `MONGO_URL`,
+`DB_NAME`, and a `JWT_SECRET` of at least 32 characters in Vercel's Production
+environment, along with the other variables used by your enabled features.
+The local `.env` file is excluded from Git and is not deployed.
+
+MongoDB, its collections, and GridFS are initialized during ASGI startup using
+the running event loop. Creating GridFS when the module is imported binds Motor
+to the import-time loop and can cause Vercel startup to fail with
+`Future ... attached to a different loop`. Both Vercel and Railway now create
+these resources on the loop serving the app and close the client on shutdown
+or failed startup.
+
+After deploying the updated code, check `/` for `"database": "connected"` and
+`"database_name": "DishFinder"` (or your configured database name), then open
+`/docs`. The lifecycle regression test imports the app before creating its
+startup loop and exercises database and GridFS operations across two separate
+lifespans without contacting MongoDB.
+
+Vercel function instances can suspend or stop when idle. For timely processing
+of scheduled account deletions, keep the Railway backend running against the
+same database, or provide a separate scheduled cleanup service; the in-process
+60-second worker alone is not a reliable schedule on Vercel.
+
+References: [FastAPI on Vercel](https://vercel.com/docs/frameworks/backend/fastapi),
+[Vercel function background execution](https://vercel.com/kb/guide/troubleshooting-inconsistent-logs-in-vercel-functions).
+
 ## Account deletion API
 
 `POST /api/auth/delete-account` deletes the authenticated registered account or

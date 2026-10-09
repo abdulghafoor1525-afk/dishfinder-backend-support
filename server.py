@@ -38,9 +38,12 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ["DB_NAME"]]
-fs = AsyncIOMotorGridFSBucket(db)
+database_name = os.environ["DB_NAME"]
+# Vercel imports this module before creating the ASGI lifespan's event loop.
+# GridFS binds Motor to a loop during construction, so create these at startup.
+client = None
+db = None
+fs = None
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "")
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
@@ -65,13 +68,13 @@ EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS = max(
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
-users_collection = db.get_collection("users")
-favourites_collection = db.get_collection("favourites")
-search_history_collection = db.get_collection("search_history")
-subscriptions_collection = db.get_collection("subscriptions")
-sessions_collection = db.get_collection("sessions")
-devices_collection = db.get_collection("devices")
-device_quotas_collection = db.get_collection("device_quotas")
+users_collection = None
+favourites_collection = None
+search_history_collection = None
+subscriptions_collection = None
+sessions_collection = None
+devices_collection = None
+device_quotas_collection = None
 FREE_SEARCH_LIMIT = 3
 ACCOUNT_DELETION_SCAN_SECONDS = 60
 logger = logging.getLogger(__name__)
@@ -1371,10 +1374,25 @@ app.include_router(auth_router)
 app.include_router(api_router)
 
 
-@app.on_event("startup")
-async def initialise_database():
-    if len(JWT_SECRET) < 32:
-        raise RuntimeError("JWT_SECRET must be set to a random value of at least 32 characters")
+def _connect_database():
+    """Bind every Motor handle to the loop that will serve requests."""
+    global client, db, fs
+    global users_collection, favourites_collection, search_history_collection
+    global subscriptions_collection, sessions_collection, devices_collection, device_quotas_collection
+
+    client = AsyncIOMotorClient(mongo_url, io_loop=asyncio.get_running_loop())
+    db = client[database_name]
+    fs = AsyncIOMotorGridFSBucket(db)
+    users_collection = db.get_collection("users")
+    favourites_collection = db.get_collection("favourites")
+    search_history_collection = db.get_collection("search_history")
+    subscriptions_collection = db.get_collection("subscriptions")
+    sessions_collection = db.get_collection("sessions")
+    devices_collection = db.get_collection("devices")
+    device_quotas_collection = db.get_collection("device_quotas")
+
+
+async def _create_database_indexes():
     await users_collection.create_index("id", unique=True)
     await sessions_collection.create_index("id", unique=True)
     await users_collection.create_index("email", unique=True, partialFilterExpression={"is_anonymous": False})
@@ -1389,14 +1407,33 @@ async def initialise_database():
     await subscriptions_collection.create_index("user_id", unique=True, partialFilterExpression={"user_id": {"$exists": True}})
     # No TTL on users: cascading cleanup must finish before removing the account.
     await users_collection.create_index([("deletion_status", 1), ("delete_after", 1)])
-    app.state.account_deletion_task = asyncio.create_task(account_deletion_worker())
+
+
+@app.on_event("startup")
+async def initialise_database():
+    global client
+    if len(JWT_SECRET) < 32:
+        raise RuntimeError("JWT_SECRET must be set to a random value of at least 32 characters")
+    try:
+        _connect_database()
+        await _create_database_indexes()
+        app.state.account_deletion_task = asyncio.create_task(account_deletion_worker())
+    except BaseException:
+        # ASGI does not run shutdown handlers after a failed startup.
+        if client is not None:
+            client.close()
+            client = None
+        raise
 
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    global client
     task = getattr(app.state, "account_deletion_task", None)
     if task:
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
-    client.close()
+    if client is not None:
+        client.close()
+        client = None
