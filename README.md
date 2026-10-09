@@ -149,6 +149,6 @@ EULA metadata, as requested in the rejection notice.
   operational practice, including the account-deletion API described above.
 - The terms link to Apple's Standard EULA unless the App Store listing supplies
   a custom EULA. Confirm that matches the app's App Store Connect configuration.
-- Update the policy text and revision date when data practices or terms change.
+- Update the policy text and revision date when data practices or terms change. Updated readme
 
 Reference: [Apple's subscription review guidelines](https://developer.apple.com/app-store/review/guidelines/#subscriptions).
