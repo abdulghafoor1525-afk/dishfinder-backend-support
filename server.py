@@ -75,7 +75,7 @@ subscriptions_collection = None
 sessions_collection = None
 devices_collection = None
 device_quotas_collection = None
-FREE_SEARCH_LIMIT = 3
+FREE_SEARCH_LIMIT = 30
 ACCOUNT_DELETION_SCAN_SECONDS = 60
 logger = logging.getLogger(__name__)
 
@@ -1133,7 +1133,7 @@ async def search_restaurants(search_req: SearchRequest, user: dict = Depends(req
         (within if distance <= search_req.radius_miles else beyond).append(result)
     within.sort(key=lambda item: item["distance_miles"])
     beyond.sort(key=lambda item: item["distance_miles"])
-    # Reserve only a completed search. This is atomic, so the fourth free result is never returned.
+    # Reserve only a completed search. This is atomic, so results beyond the free limit are never returned.
     search_count = await consume_search_quota(user)
     await search_history_collection.insert_one({"id": str(uuid.uuid4()), "user_id": user["id"], "dish_name": search_req.dish_name, "latitude": search_req.latitude, "longitude": search_req.longitude, "radius_miles": search_req.radius_miles, "results_count": len(within), "timestamp": utcnow()})
     return {"results": within, "results_beyond_radius": beyond, "radius_miles": search_req.radius_miles, "message": "success", "search_count": search_count, "searches_remaining": "unlimited" if is_pro(user) else max(0, FREE_SEARCH_LIMIT - search_count)}

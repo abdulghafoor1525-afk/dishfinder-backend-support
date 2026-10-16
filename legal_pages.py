@@ -191,7 +191,7 @@ TERMS_OF_USE_HTML = render_legal_page("Terms of Use (EULA)", """
           <section hidden>
             <h2>3. Subscription plans and benefits</h2>
             <p>DishFinder Pro provides unlimited restaurant searches while your subscription is active. Monthly plans have a one-month billing period; annual plans have a one-year billing period. A registered DishFinder account is required to use paid subscription access.</p>
-            <p>The free allowance is three searches, shared across guest sessions and accounts used on the same device. The purchase screen shows the available plan, benefits, billing period, and price in the currency provided by your store before you confirm a purchase.</p>
+            <p>The free allowance is thirty searches, shared across guest sessions and accounts used on the same device. The purchase screen shows the available plan, benefits, billing period, and price in the currency provided by your store before you confirm a purchase.</p>
           </section>
           <section hidden>
             <h2>4. Payment and automatic renewal</h2>
