@@ -75,7 +75,7 @@ subscriptions_collection = None
 sessions_collection = None
 devices_collection = None
 device_quotas_collection = None
-FREE_SEARCH_LIMIT = 30
+FREE_SEARCH_LIMIT = 3
 ACCOUNT_DELETION_SCAN_SECONDS = 60
 logger = logging.getLogger(__name__)
 
