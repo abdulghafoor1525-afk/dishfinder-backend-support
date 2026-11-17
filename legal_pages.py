@@ -165,7 +165,7 @@ def render_legal_page(title: str, sections: str) -> str:
         <header>
           <p class="brand">DishFinder</p>
           <h1>{safe_title}</h1>
-          <p class="updated">Last updated: <time datetime="2026-09-29">September 29, 2026</time></p>
+          <p class="updated">Last updated: <time datetime="2026-11-17">November 17, 2026</time></p>
           <nav aria-label="Legal policies">
             <a href="./terms-of-use">Terms of Use (EULA)</a>
             <a href="./privacy-policy">Privacy Policy</a>
@@ -195,13 +195,13 @@ TERMS_OF_USE_HTML = render_legal_page("Terms of Use (EULA)", """
           </section>
           <section>
             <h2>4. Payment and automatic renewal</h2>
-            <p>Payment is charged to your Apple Account or Google Play account when you confirm a purchase, subject to any offer shown at checkout. Subscriptions automatically renew for the same billing period unless you cancel before renewal.</p>
+            <p>Payment is charged to your account with the store where you make the purchase when you confirm it, subject to any offer shown at checkout. Subscriptions automatically renew for the same billing period unless you cancel before renewal.</p>
             <p>For Apple subscriptions, turn off renewal at least 24 hours before the current period ends. Your account may be charged for renewal within the 24 hours before that period ends. The renewal price is the price disclosed by the store, subject to any price-change notices and consent required by the store or applicable law.</p>
             <p>If a free trial or introductory offer is available, its duration and subsequent price are shown before purchase. It converts to a paid subscription unless cancelled under the offer's terms; cancel an Apple trial at least 24 hours before it ends to avoid renewal.</p>
           </section>
           <section>
             <h2>5. Managing and cancelling subscriptions</h2>
-            <p>On iPhone or iPad, open Settings, tap your name, then Subscriptions, and select DishFinder to manage or cancel your plan. See <a href="https://support.apple.com/en-us/118428">Apple's cancellation instructions</a>. For Google Play purchases, manage your plan in Google Play's Payments &amp; subscriptions settings.</p>
+            <p>On iPhone or iPad, open Settings, tap your name, then Subscriptions, and select DishFinder to manage or cancel your plan. See <a href="https://support.apple.com/en-us/118428">Apple's cancellation instructions</a>. For purchases through another store, manage your plan in that store's subscription settings.</p>
             <p>Cancellation stops future renewals. Paid access normally continues until the end of the current paid period, subject to the store's rules. Uninstalling DishFinder, signing out, or requesting account deletion does not cancel a store subscription.</p>
             <p>Purchases and refunds are managed by the store where you subscribed. For Apple purchases, <a href="https://reportaproblem.apple.com/">request a refund from Apple</a>. Refund eligibility is determined by the store and applicable law; contacting DishFinder support does not itself cancel a subscription or guarantee a refund.</p>
           </section>
@@ -215,7 +215,7 @@ TERMS_OF_USE_HTML = render_legal_page("Terms of Use (EULA)", """
             <p>To cancel the request, sign in again with your email address and password before the deletion deadline shown when you make the request. This restores your account and preserves your data; any email-verification requirements still apply. At or after the deadline, the request cannot be cancelled and the account cannot be restored. Signing out, uninstalling the app, or simply being inactive does not start an account-deletion request.</p>
             <p>If you do not sign in before the deadline, we automatically process permanent deletion of your account, favourites, search history, profile picture, sign-in sessions, and subscription records held in DishFinder's account database. Temporary service outages may delay completion, but do not extend the recovery period. You may also choose immediate deletion, which has no grace period and cannot be cancelled.</p>
             <p>Device installation credentials, guest data, and device search-allowance records remain separate from your registered account. Deleting an account does not reset the device's free search allowance. Our <a href="./privacy-policy">Privacy Policy</a> explains retained information and how to make additional privacy requests.</p>
-            <p>Account deletion does not cancel an App Store or Google Play subscription, stop store billing, or automatically provide a refund. Cancel your subscription separately through the store to stop future renewals. Account access, including paid access through that account, is unavailable while deletion is pending and after permanent deletion.</p>
+            <p>Account deletion does not cancel a store subscription, stop store billing, or automatically provide a refund. Cancel your subscription separately through the store to stop future renewals. Account access, including paid access through that account, is unavailable while deletion is pending and after permanent deletion.</p>
           </section>
           <section>
             <h2>8. Availability and your rights</h2>
@@ -253,7 +253,7 @@ PRIVACY_POLICY_HTML = render_legal_page("Privacy Policy", """
           <section>
             <h2>4. Service providers and sharing</h2>
             <ul>
-              <li><strong>Apple App Store or Google Play:</strong> handles purchases, billing, renewals, cancellations, and refunds under the store's privacy policy.</li>
+              <li><strong>App stores:</strong> The store where you purchase a subscription handles purchases, billing, renewals, cancellations, and refunds under its privacy policy.</li>
               <li><strong>RevenueCat:</strong> processes app user identifiers and purchase and subscription information to manage subscription access.</li>
               <li><strong>Google Maps / Places:</strong> receives the search query, coordinates, and radius needed to return restaurant results.</li>
               <li><strong>Resend:</strong> processes your email address and verification email content to deliver account verification messages.</li>
@@ -276,7 +276,7 @@ PRIVACY_POLICY_HTML = render_legal_page("Privacy Policy", """
             <p>You can manage location permissions through your device, remove favourites or your profile picture using the app's available controls, and manage subscriptions through the store where you purchased them.</p>
             <p>Use the account-deletion option in DishFinder to request deletion of your registered account and confirm with your current password. Standard requests use the 15-day grace period described above; immediate deletion is also available. During the grace period, account access is blocked until you sign in to cancel the request.</p>
             <p>For access to, correction of, or additional deletion of your personal information, or if you cannot access your account, email <a href="mailto:support@dishfinder.online">support@dishfinder.online</a>. We may need to verify your identity before fulfilling a request. Depending on where you live, you may have additional rights to object to processing, restrict it, or complain to a data protection authority.</p>
-            <p>A data deletion request does not cancel your App Store or Google Play subscription. Cancel it separately in the store to stop future billing.</p>
+            <p>A data deletion request does not cancel your store subscription. Cancel it separately in the store to stop future billing.</p>
           </section>
           <section>
             <h2>7. Changes to this policy</h2>
